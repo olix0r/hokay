@@ -14,12 +14,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Use a small buffer, since we don't really transfer much data.
             .http1_max_buf_size(8 * 1024);
 
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
         server
-            .serve(hyper::service::make_service_fn(|_conn| async {
-                Ok::<_, hyper::Error>(hyper::service::service_fn(|_req| async {
+            .serve(hyper::service::make_service_fn(|_conn| async move {
+                Ok::<_, hyper::Error>(hyper::service::service_fn(|_req| async move {
                     Ok::<_, hyper::Error>(
                         hyper::Response::builder()
-                            .header(hyper::header::SERVER, "hokay")
+                            .header(hyper::header::SERVER, format!("hokay/{VERSION}"))
                             .status(hyper::StatusCode::NO_CONTENT)
                             .body(hyper::Body::default())
                             .unwrap(),
@@ -35,10 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     tokio::select! {
         res = (&mut task) => match res {
-            Ok(res) => match res {
-                Ok(()) => return Err("server exited unexpectedly".into()),
-                Err(error) => return Err(format!("server exited unexpectedly: {error}").into()),
-            },
+            Ok(Ok(())) => return Err(format!("server exited unexpectedly").into()),
+            Ok(Err(error)) => return Err(format!("server exited unexpectedly: {error}").into()),
             Err(error) => return Err(format!("server exited unexpectedly: {error}").into()),
         },
         _ = interrupt.recv() => {
