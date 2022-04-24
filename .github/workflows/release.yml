@@ -3,7 +3,7 @@ name: Release
 on:
   pull_request:
     paths:
-      - ./.github/workflows/release.yml
+      - .github/workflows/release.yml
   push:
     tags:
       - 'release/*'
@@ -69,7 +69,7 @@ jobs:
       - uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535
         with:
           name: ${{ matrix.architecture }}-artifacts
-          path: target/${{ matrix.target }}/release/*
+          path: target/${{ matrix.target }}/release/hokay-${{ matrix.architecture }}*
 
   # Publish a multi-arch docker image using the already-built binaries..
   docker:
