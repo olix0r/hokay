@@ -3,7 +3,7 @@ name: Release
 on:
   pull_request:
     paths:
-      - ./.github/workflows/release.yml
+      - .github/workflows/release.yml
   push:
     tags:
       - 'release/*'
