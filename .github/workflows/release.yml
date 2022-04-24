@@ -85,7 +85,7 @@ jobs:
           repo="ghcr.io/${{ github.repository_owner }}/hokay"
           ref="${{ github.ref }}"
           echo ::set-output name=repo::"$repo"
-          if [[ "$ref" == refs/tags/release/* ]] && [[ "${{ github.event }}" == push ]]; then
+          if [[ "$ref" == refs/tags/release/* ]]; then
             echo ::set-output name=version::"${ref##refs/tags/release/}"
           else
             sha="${{ github.sha }}"
@@ -121,18 +121,22 @@ jobs:
             docker manifest annotate "$repo:$version" "$repo:$version-$arch" --os=linux --arch=$arch
           done
       - run: docker manifest push "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}"
-      - if: startsWith(github.ref, 'refs/tags/release/') && github.event == 'push'
+      - if: startsWith(github.ref, 'refs/tags/release/')
         run: |
           repo="${{ steps.meta.outputs.repo }}"
-          docker tag "$repo:${{ steps.meta.outputs.version }}" "$repo:latest"
+          version="${{ steps.meta.outputs.version }}"
+          docker pull "$repo:$version"
+          docker tag "$repo:$version" "$repo:latest"
           docker push "$repo:latest"
 
   # Publish a GitHub release with platform-specific static binaries.
   release:
-    if: startsWith(github.ref, 'refs/tags/release/') && github.event == 'push'
+    if: startsWith(github.ref, 'refs/tags/release/')
     needs: [package, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - name: meta
         id: meta
@@ -150,7 +154,7 @@ jobs:
 
   # If the release was skipped, list the built binaries.
   list:
-    if: "!(startsWith(github.ref, 'refs/tags/release/') && github.event == 'push')"
+    if: "!startsWith(github.ref, 'refs/tags/release/')"
     needs: [package]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -169,7 +173,6 @@ jobs:
       image: docker://rust:1.60.0-bullseye
     steps:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - if: "!(startsWith(github.ref, 'refs/tags/release/') && github.event == 'push')"
-        run: cargo publish --token=${{ secrets.CRATESIO_TOKEN }} --dry-run
-      - if: startsWith(github.ref, 'refs/tags/release/') && github.event == 'push'
+      - run: cargo publish --dry-run
+      - if: startsWith(github.ref, 'refs/tags/release/')
         run: cargo publish --token=${{ secrets.CRATESIO_TOKEN }}
