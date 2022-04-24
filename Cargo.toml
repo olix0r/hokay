@@ -1,6 +1,6 @@
 [package]
 name = "hokay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "A bare-bones HTTP server that always returns with 204 No Content."
@@ -8,8 +8,20 @@ readme = "README.md"
 repository = "https://github.com/olix0r/hokay"
 
 [dependencies]
+clap = { version = "3", default-features = false, features = ["cargo", "derive", "std"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hyper = { version = "0.14", default-features = false, features = ["http1", "runtime", "server"] }
-tokio = { version = "1", features = ["macros", "net", "rt", "signal", "sync"] }
+
+[dependencies.tokio]
+version = "1"
+default-features = false
+features = [
+    "macros",
+    "net",
+    "rt",
+    "signal",
+    "sync",
+]
 
 [profile.release]
 lto = true

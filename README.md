@@ -8,7 +8,7 @@ infrequently.
 ## Usage
 
 ```text
-:; hokay 8080
+:; hokay
 ```
 
 ```text
