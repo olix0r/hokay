@@ -1,0 +1,175 @@
+name: Release
+
+on:
+  pull_request:
+    paths:
+      - ./.github/workflows/release.yml
+  push:
+    tags:
+      - 'release/*'
+
+env:
+  CARGO_ACTION_FMT_VERSION: v0.1.3
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        architecture: [amd64, arm64, arm]
+        include:
+          - architecture: amd64
+            target: x86_64-unknown-linux-musl
+            binutils: binutils-x86-64-linux-gnu
+            strip: strip
+          - architecture: arm64
+            target: aarch64-unknown-linux-musl
+            binutils: binutils-aarch64-linux-gnu
+            strip: aarch64-linux-gnu-strip
+          - architecture: arm
+            target: armv7-unknown-linux-musleabihf
+            binutils: binutils-arm-linux-gnueabihf
+            strip: arm-linux-gnueabihf-strip
+    name: package (${{ matrix.architecture }})
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.60-bullseye
+    env:
+      CARGO: cargo
+    steps:
+      - run: rustup target add "${{ matrix.target }}"
+      - run: apt-get update
+      - run: apt-get -y install musl-tools "${{ matrix.binutils }}"
+      - if:  matrix.architecture != 'amd64'
+        name: Install cross
+        run: |
+          cargo install cross
+          apt-get -y install docker.io
+          echo CARGO=cross >> $GITHUB_ENV
+          echo CROSS_DOCKER_IN_DOCKER=true >> $GITHUB_ENV
+      - run: |
+          curl --proto =https --tlsv1.3 -vsSfL "https://github.com/olix0r/cargo-action-fmt/releases/download/release%2F${CARGO_ACTION_FMT_VERSION}/cargo-action-fmt-x86_64-unknown-linux-gnu" \
+            -o /usr/local/bin/cargo-action-fmt
+          chmod 755 /usr/local/bin/cargo-action-fmt
+      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - name: Build
+        run: |
+          ${CARGO} build --release --target "${{ matrix.target }}" | cargo-action-fmt
+          cd target/"${{ matrix.target }}"/release
+          "${{ matrix.strip }}" hokay
+          mv hokay hokay-${{ matrix.architecture }}
+          shasum -a 256 hokay-${{ matrix.architecture }} > hokay-${{ matrix.architecture }}.sha256
+      - uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535
+        with:
+          name: ${{ matrix.architecture }}-artifacts
+          path: target/${{ matrix.target }}/release/*
+
+  # Publish a multi-arch docker image using the already-built binaries..
+  docker:
+    needs: [package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      packages: write
+    steps:
+      - name: Meta
+        id: meta
+        run: |
+          repo="ghcr.io/${{ github.repository_owner }}/hokay"
+          ref="${{ github.ref }}"
+          echo ::set-output name=repo::"$repo"
+          if [[ "$ref" == refs/tags/release/* ]] && [[ "${{ github.event }}" == push ]]; then
+            echo ::set-output name=version::"${ref##refs/tags/release/}"
+          else
+            sha="${{ github.sha }}"
+            echo ::set-output name=version::"test-${sha:0:7}"
+          fi
+      - name: Run mktemp
+        id: mktemp
+        run: echo ::set-output name=dir::"$(mktemp -d -t hokay-XXXXXX)"
+      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
+        with:
+          path: ${{ steps.mktemp.outputs.dir }}/artifacts
+      - uses: docker/setup-buildx-action@94ab11c41e45d028884a99163086648e898eed25
+      - uses: docker/login-action@dd4fa0671be5250ee6f50aedf4cb05514abda2c7
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build multi-arch docker images
+        working-directory: ${{ steps.mktemp.outputs.dir }}
+        run: |
+          ( echo 'FROM scratch'
+            echo 'ARG BIN'
+            echo 'COPY $BIN /hokay'
+            echo 'ENTRYPOINT ["/hokay"]'
+          ) >Dockerfile
+          repo="${{ steps.meta.outputs.repo }}"
+          version="${{ steps.meta.outputs.version }}"
+          for arch in amd64 arm64 arm; do
+            docker buildx build . --push --tag "$repo:$version-$arch" --build-arg "BIN=artifacts/$arch-artifacts/hokay-$arch"
+          done
+          docker manifest create "$repo:$version" "$repo:$version-amd64" "$repo:$version-arm64" "$repo:$version-arm"
+          for arch in amd64 arm64 arm ; do
+            docker manifest annotate "$repo:$version" "$repo:$version-$arch" --os=linux --arch=$arch
+          done
+      - run: docker manifest push "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}"
+      - if: startsWith(github.ref, 'refs/tags/release/') && github.event == 'push'
+        run: |
+          repo="${{ steps.meta.outputs.repo }}"
+          docker tag "$repo:${{ steps.meta.outputs.version }}" "$repo:latest"
+          docker push "$repo:latest"
+
+  # Publish a GitHub release with platform-specific static binaries.
+  release:
+    if: startsWith(github.ref, 'refs/tags/release/') && github.event == 'push'
+    needs: [package, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: meta
+        id: meta
+        run: |
+          ref="${{ github.ref }}"
+          echo ::set-output name=name::"${ref##refs/tags/release/}"
+      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          files: artifacts/**/hokay-*
+          generate_release_notes: true
+
+  # If the release was skipped, list the built binaries.
+  list:
+    if: "!(startsWith(github.ref, 'refs/tags/release/') && github.event == 'push')"
+    needs: [package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
+        with:
+          path: artifacts
+      - run: ls -lh artifacts/**/hokay-*
+
+  crate:
+    # Only publish the crate after the rest of the release succeeds.
+    needs: [release, docker]
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.60.0-bullseye
+    steps:
+      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - if: "!(startsWith(github.ref, 'refs/tags/release/') && github.event == 'push')"
+        run: cargo publish --token=${{ secrets.CRATESIO_TOKEN }} --dry-run
+      - if: startsWith(github.ref, 'refs/tags/release/') && github.event == 'push'
+        run: cargo publish --token=${{ secrets.CRATESIO_TOKEN }}
