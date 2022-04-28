@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - name: Build
         run: |
-          ${CARGO} build --release --target "${{ matrix.target }}" | cargo-action-fmt
+          ${CARGO} build --release --target "${{ matrix.target }}" --message-format=json | cargo-action-fmt
           cd target/"${{ matrix.target }}"/release
           "${{ matrix.strip }}" hokay
           mv hokay hokay-${{ matrix.architecture }}
@@ -162,11 +162,6 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-      - name: meta
-        id: meta
-        run: |
-          ref="${{ github.ref }}"
-          echo ::set-output name=name::"${ref##refs/tags/release/}"
       - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
           path: artifacts

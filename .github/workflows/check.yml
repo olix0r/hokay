@@ -26,7 +26,7 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSLvo /usr/local/bin/cargo-action-fmt "https://github.com/olix0r/cargo-action-fmt/releases/download/release%2F${CARGO_ACTION_FMT_VERSION}/cargo-action-fmt-x86_64-unknown-linux-gnu"
           chmod 755 /usr/local/bin/cargo-action-fmt
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - run: cargo clippy --all-targets --all-features | cargo-action-fmt
+      - run: cargo clippy --all-targets --all-features --message-format=json | cargo-action-fmt
 
   fmt:
     timeout-minutes: 5
