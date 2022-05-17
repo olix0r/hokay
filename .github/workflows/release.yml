@@ -9,7 +9,6 @@ on:
       - 'release/*'
 
 env:
-  CARGO_ACTION_FMT_VERSION: v0.1.3
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
@@ -90,10 +89,7 @@ jobs:
           apt-get -y install docker.io
           echo CARGO=cross >> $GITHUB_ENV
           echo CROSS_DOCKER_IN_DOCKER=true >> $GITHUB_ENV
-      - run: |
-          curl --proto =https --tlsv1.3 -vsSfL "https://github.com/olix0r/cargo-action-fmt/releases/download/release%2F${CARGO_ACTION_FMT_VERSION}/cargo-action-fmt-x86_64-unknown-linux-gnu" \
-            -o /usr/local/bin/cargo-action-fmt
-          chmod 755 /usr/local/bin/cargo-action-fmt
+      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - name: Build
         run: |
