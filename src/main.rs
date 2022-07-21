@@ -26,7 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Prevent port scanners, etc, from holding connections open.
                 .http1_header_read_timeout(std::time::Duration::from_secs(2))
                 // Use a small buffer, since we don't really transfer much data.
-                .http1_max_buf_size(8 * 1024);
+                .http1_max_buf_size(8 * 1024)
+                .tcp_nodelay(true);
             println!("Listening on {addr}");
 
             let mut rx = rx.clone();
