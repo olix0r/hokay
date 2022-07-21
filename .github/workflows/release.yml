@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.60-bullseye
+      image: docker://rust:1.62-bullseye
     steps:
       - id: meta
         shell: bash
@@ -75,7 +75,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.60-bullseye
+      image: docker://rust:1.62-bullseye
     env:
       CARGO: cargo
     steps:
@@ -128,7 +128,7 @@ jobs:
         run: |
           ( echo 'FROM scratch'
             echo 'ARG BIN'
-            echo 'COPY $BIN /hokay'
+            echo 'COPY --chmod=555 $BIN /hokay'
             echo 'ENTRYPOINT ["/hokay"]'
           ) >Dockerfile
           repo="${{ needs.meta.outputs.repo }}"
@@ -185,7 +185,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.60.0-bullseye
+      image: docker://rust:1.62-bullseye
     steps:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - run: cargo publish --dry-run
