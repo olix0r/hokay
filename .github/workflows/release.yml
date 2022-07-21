@@ -49,7 +49,7 @@ jobs:
             exit 1
           fi
     outputs:
-      repo: ghcr.io/olix0r/hokay
+      repo: ghcr.io/${{ github.repository_owner }}/hokay
       mode: ${{ steps.meta.outputs.mode }}
       version: ${{ steps.meta.outputs.version }}
 
@@ -143,8 +143,8 @@ jobs:
       - run: docker manifest push "${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}"
       - if: needs.meta.outputs.mode == 'release'
         run: |
-          repo="${{ steps.meta.outputs.repo }}"
-          version="${{ steps.meta.outputs.version }}"
+          repo="${{ needs.meta.outputs.repo }}"
+          version="${{ needs.meta.outputs.version }}"
           docker pull "$repo:$version"
           docker tag "$repo:$version" "$repo:latest"
           docker push "$repo:latest"
