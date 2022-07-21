@@ -49,7 +49,7 @@ jobs:
             exit 1
           fi
     outputs:
-      repo: ghcr.io/${{ github.repository_owner }}/hokay
+      repo: ghcr.io/olix0r/hokay
       mode: ${{ steps.meta.outputs.mode }}
       version: ${{ steps.meta.outputs.version }}
 
