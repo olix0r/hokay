@@ -8,13 +8,17 @@ struct Args {
     /// One or more addresses to listen on.
     #[clap(default_value = "0.0.0.0:8080")]
     addrs: Vec<std::net::SocketAddr>,
+
+    /// The HTTP status code to return.
+    #[clap(long, short, default_value = "204")]
+    status: hyper::StatusCode,
 }
 
-/// Runs a basic HTTP server that always returns 204 No Content.
+/// Runs a basic HTTP server that always returns an empty response.
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
-    let Args { addrs } = Args::parse();
+    let Args { addrs, status } = Args::parse();
 
     let (tx, rx) = tokio::sync::watch::channel(());
     let tasks = addrs
@@ -28,17 +32,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Use a small buffer, since we don't really transfer much data.
                 .http1_max_buf_size(8 * 1024)
                 .tcp_nodelay(true);
-            println!("Listening on {addr}");
+            println!("Listening on {addr} (status: {status})");
 
             let mut rx = rx.clone();
             Ok::<_, hyper::Error>(tokio::spawn(
                 server
-                    .serve(hyper::service::make_service_fn(|_conn| async move {
-                        Ok::<_, hyper::Error>(hyper::service::service_fn(|_req| async move {
+                    .serve(hyper::service::make_service_fn(move |_conn| async move {
+                        Ok::<_, hyper::Error>(hyper::service::service_fn(move |_req| async move {
                             Ok::<_, hyper::Error>(
                                 hyper::Response::builder()
                                     .header(hyper::header::SERVER, format!("hokay/{VERSION}"))
-                                    .status(hyper::StatusCode::NO_CONTENT)
+                                    .status(status)
                                     .body(hyper::Body::default())
                                     .unwrap(),
                             )

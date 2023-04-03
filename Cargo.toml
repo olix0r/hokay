@@ -3,7 +3,7 @@ name = "hokay"
 version = "0.2.2"
 edition = "2021"
 license = "MIT"
-description = "A bare-bones HTTP server that always returns with 204 No Content."
+description = "A bare-bones HTTP server that always returns an empty response."
 readme = "README.md"
 repository = "https://github.com/olix0r/hokay"
 
