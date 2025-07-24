@@ -20,7 +20,7 @@ permissions:
 jobs:
   meta:
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: docker://rust:1.88-bullseye
     steps:
@@ -73,7 +73,7 @@ jobs:
             strip: arm-linux-gnueabihf-strip
     name: package (${{ matrix.architecture }})
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: docker://rust:1.88-bullseye
     env:
@@ -109,7 +109,7 @@ jobs:
     permissions:
       packages: write
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Run mktemp
         id: mktemp
@@ -156,7 +156,7 @@ jobs:
     permissions:
       contents: write
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
@@ -172,7 +172,7 @@ jobs:
     needs: [meta, package]
     if: needs.meta.outputs.mode == 'test'
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
@@ -183,7 +183,7 @@ jobs:
     # Only publish the crate after the rest of the release succeeds.
     needs: [release, docker]
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: docker://rust:1.88-bullseye
     steps:
