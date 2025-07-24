@@ -113,34 +113,34 @@ jobs:
     steps:
       - name: Run mktemp
         id: mktemp
-        run: echo ::set-output name=dir::"$(mktemp -d -t hokay-XXXXXX)"
+        run: echo "dir=$(mktemp -d -t hokay-XXXXXX)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
         with:
           path: ${{ steps.mktemp.outputs.dir }}/artifacts
-      - uses: docker/setup-buildx-action@94ab11c41e45d028884a99163086648e898eed25
-      - uses: docker/login-action@dd4fa0671be5250ee6f50aedf4cb05514abda2c7
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - uses: docker/login-action@3d100841f68d4548bf57e52eb27bd33ec5069f55
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build multi-arch docker images
+      - name: Write Dockerfile
         working-directory: ${{ steps.mktemp.outputs.dir }}
         run: |
-          ( echo 'FROM scratch'
-            echo 'ARG BIN'
-            echo 'COPY --chmod=555 $BIN /hokay'
-            echo 'ENTRYPOINT ["/hokay"]'
-          ) >Dockerfile
-          repo="${{ needs.meta.outputs.repo }}"
-          version="${{ needs.meta.outputs.version }}"
-          for arch in amd64 arm64 arm; do
-            docker buildx build . --push --tag "$repo:$version-$arch" --build-arg "BIN=artifacts/$arch-artifacts/hokay-$arch"
-          done
-          docker manifest create "$repo:$version" "$repo:$version-amd64" "$repo:$version-arm64" "$repo:$version-arm"
-          for arch in amd64 arm64 arm ; do
-            docker manifest annotate "$repo:$version" "$repo:$version-$arch" --os=linux --arch=$arch
-          done
-      - run: docker manifest push "${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}"
+          cat >Dockerfile <<'EOF'
+          # syntax=docker/dockerfile:1.4
+          FROM scratch
+          ARG TARGETARCH
+          COPY --chmod=555 artifacts/${TARGETARCH}-artifacts/hokay-${TARGETARCH} /hokay
+          ENTRYPOINT ["/hokay"]
+          EOF
+      - name: Build multi-arch docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: ${{ steps.mktemp.outputs.dir }}
+          file: ${{ steps.mktemp.outputs.dir }}/Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
       - if: needs.meta.outputs.mode == 'release'
         run: |
           repo="${{ needs.meta.outputs.repo }}"
