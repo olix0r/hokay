@@ -1,6 +1,6 @@
 [package]
 name = "hokay"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 license = "MIT"
 description = "A bare-bones HTTP server that always returns with 204 No Content."
