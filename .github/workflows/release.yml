@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62-bullseye
+      image: docker://rust:1.88-bullseye
     steps:
       - id: meta
         shell: bash
@@ -75,7 +75,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62-bullseye
+      image: docker://rust:1.88-bullseye
     env:
       CARGO: cargo
     steps:
@@ -185,7 +185,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.62-bullseye
+      image: docker://rust:1.88-bullseye
     steps:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - run: cargo publish --dry-run
