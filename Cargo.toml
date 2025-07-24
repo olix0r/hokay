@@ -10,6 +10,9 @@ repository = "https://github.com/olix0r/hokay"
 [profile.release]
 lto = true
 
+[dependencies.bytes]
+version = "1"
+
 [dependencies.clap]
 version = "4"
 default-features = false
@@ -21,9 +24,18 @@ default-features = false
 features = ["std"]
 
 [dependencies.hyper]
-version = "0.14"
+version = "1"
 default-features = false
-features = ["http1", "runtime", "server"]
+features = ["http1", "server"]
+
+[dependencies.hyper-util]
+version = "0.1"
+default-features = false
+features = ["http1", "server-graceful", "tokio"]
+
+[dependencies.http-body-util]
+version = "0.1"
+default-features = false
 
 [dependencies.tokio]
 version = "1"
