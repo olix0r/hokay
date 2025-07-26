@@ -23,11 +23,23 @@ jobs:
       image: docker://rust:1.88-bullseye
     steps:
       - uses: actions/checkout@v4
-      - id: cargo
+      - run: cargo fetch
+      - name: Run cargo metadata
+        id: cargo
+        shell: bash
         run: |
-          echo version=$(cargo metadata --format-version=1 | $HOME/jq -r '.packages[] | select(.name == "hokay") | .version') >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          v=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "hokay") | .version')
+          echo "crate-version=$v" >> "$GITHUB_OUTPUT"
+      - name: "Crate version ${{ steps.cargo.outputs.crate-version }}"
+        run: |
+          if [[ -z "${{ steps.cargo.outputs.crate-version }}" ]]; then
+            echo "Crate version not found" >&2
+            exit 1
+          fi
 
-      - id: meta
+      - name: Run git metadata
+        id: git
         shell: bash
         run: |
           ref="${{ github.ref }}"
@@ -36,21 +48,21 @@ jobs:
             echo mode=release >> "$GITHUB_OUTPUT"
           else
             sha="${{ github.sha }}"
-            echo version="v${{ steps.cargo.outputs.version }}-git${sha:0:7}" >> "$GITHUB_OUTPUT"
+            echo version="v${{ steps.cargo.outputs.crate-version }}-git${sha:0:7}" >> "$GITHUB_OUTPUT"
             echo mode=test >> "$GITHUB_OUTPUT"
           fi
 
-      - if: steps.meta.outputs.mode == 'release'
+      - if: steps.git.outputs.mode == 'release'
         shell: bash
         run: |
-          if [[ "v${{ steps.cargo.outputs.version }}" != "${{ steps.meta.outputs.version }}" ]]; then
-            echo "::error ::Crate version v${version} does not match tag ${{ steps.meta.outputs.version }}"
+          if [[ "v${{ steps.cargo.outputs.crate-version }}" != "${{ steps.git.outputs.version }}" ]]; then
+            echo "::error ::Crate version v${{ steps.cargo.outputs.version }} does not match tag ${{ steps.git.outputs.version }}"
             exit 1
           fi
     outputs:
       repo: ghcr.io/${{ github.repository_owner }}/hokay
-      mode: ${{ steps.meta.outputs.mode }}
-      version: ${{ steps.meta.outputs.version }}
+      mode: ${{ steps.git.outputs.mode }}
+      version: ${{ steps.git.outputs.version }}
 
   build:
     needs: meta
@@ -143,15 +155,10 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { name: oci-archive }
-      - name: Run skopeo copy
-        run: |
-          skopeo copy \
-            oci-archive:oci.tar \
-            docker://ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:${{ needs.meta.outputs.version }}
-            --dest-username ${{ github.repository_owner }} \
-            --dest-password ${{ secrets.GITHUB_TOKEN }}
+      - run: skopeo login ghcr.io --username ${{ github.repository_owner }} --password "${{ secrets.GITHUB_TOKEN }}"
+      - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
       - uses: sigstore/cosign-installer@v3
-      - run: cosign sign --yes ghcr.io/${{ github.repository_owner }}/${{ github.repository }}:${{ needs.meta.outputs.version }}
+      - run: cosign sign --yes ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
 
   crate:
     # Only publish the crate after the rest of the release succeeds.
