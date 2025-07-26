@@ -19,8 +19,7 @@ jobs:
   meta:
     timeout-minutes: 5
     runs-on: ubuntu-24.04
-    container:
-      image: docker://rust:1.88-bullseye
+    container: docker://ghcr.io/linkerd/dev:v47-rust
     steps:
       - uses: actions/checkout@v4
       - run: cargo fetch
