@@ -128,12 +128,12 @@ jobs:
       - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         with:
           name: ${{ needs.meta.outputs.version }}
-          files: pkg/hokay-*
+          files: hokay-*
           generate_release_notes: true
 
   container-registry:
     needs: [meta, build]
-    if: needs.meta.outputs.mode == 'release'
+    # if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: read
       packages: write
@@ -163,5 +163,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cargo publish --dry-run
-      - if: startsWith(github.ref, 'refs/tags/release/')
+      - if: needs.meta.outputs.mode == 'release'
         run: cargo publish --token=${{ secrets.CRATESIO_TOKEN }}
