@@ -1,31 +1,17 @@
-# Multi-arch dockerfile
-
-FROM --platform=$BUILDPLATFORM ghcr.io/linkerd/dev:v46-rust-musl AS build
+FROM --platform=$BUILDPLATFORM ghcr.io/linkerd/dev:v47-rust-musl AS build
 ARG TARGETARCH
-
-WORKDIR /usr/src/hokay
-
-# Copy manifests with dummy source and fetch dependencies
+ENV CARGO="cargo auditable"
+WORKDIR /app
 COPY justfile Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() { println!(\"cargo-build cache stub\"); }" > src/main.rs
-RUN case "$TARGETARCH" in \
-      amd64) T=x86_64-unknown-linux-musl ;; \
-      arm64) T=aarch64-unknown-linux-musl ;; \
-      arm) T=armv7-unknown-linux-musleabihf ;; \
-      *) T="$TARGETARCH-unknown-linux-musl" ;; \
-    esac && \
-    just-cargo target="$T" profile=release fetch
-
-# Copy full source & build actual binary
 COPY src ./src
-RUN rm -f target/*/release/deps/hokay
-RUN case "$TARGETARCH" in \
-      amd64) T=x86_64-unknown-linux-musl ;; \
-      arm64) T=aarch64-unknown-linux-musl ;; \
-      arm) T=armv7-unknown-linux-musleabihf ;; \
-      *) T="$TARGETARCH-unknown-linux-musl" ;; \
-    esac && \
-    just-cargo target="$T" profile=release build
+RUN --mount=type=cache,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
+    --mount=type=cache,id=cargo-${TARGETARCH},target=/usr/local/cargo/registry/ \
+    just profile=release fetch
+RUN --mount=type=cache,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
+    --mount=type=cache,id=cargo-${TARGETARCH},target=/usr/local/cargo/registry/ \
+    just profile=release build && \
+    mv target/$(just --evaluate _target)/release/hokay target/hokay
 
-FROM scratch
-COPY --from=build /usr/src/hokay/target/*/release/hokay /usr/local/bin/hokay
+FROM scratch AS runtime
+COPY --from=build /app/target/hokay /usr/local/bin/hokay
+ENTRYPOINT ["/usr/local/bin/hokay"]

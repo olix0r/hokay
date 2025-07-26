@@ -14,39 +14,18 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  clippy:
+  rust:
     timeout-minutes: 5
     runs-on: ubuntu-24.04
-    container:
-      image: docker://rust:1.88-bullseye
-    steps:
-      - run: rustup component add clippy
-      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - run: cargo clippy --all-targets --all-features --message-format=json | cargo-action-fmt
-
-  fmt:
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    container:
-      image: docker://rust:1.88-bullseye
-    steps:
-      - run: rustup component add rustfmt
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - run: cargo fmt -- --check
-
-  deny:
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        checks:
-          - advisories
-          - bans licenses sources
-    # Prevent sudden announcement of a new advisory from failing Ci.
-    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    container: docker://ghcr.io/linkerd/dev:v47-rust
     steps:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - run: just-cargo fmt -- --check
+      - run: just-cargo clippy --all-targets --all-features
       - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
         with:
-          command: check ${{ matrix.checks }}
+          command: check bans licenses sources
+      - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
+        continue-on-error: true
+        with:
+          command: advisories
