@@ -72,7 +72,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Run docker buildx build .
         run: |
-          docker buildx build . \
+          docker buildx build . \~
             --tag ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }} \
             --platform linux/amd64,linux/arm64 \
             --output type=oci,dest=oci.tar \
@@ -82,6 +82,34 @@ jobs:
         with:
           name: oci-archive
           path: oci.tar
+
+  container-registry:
+    needs: [meta, build]
+    # if: needs.meta.outputs.mode == 'release'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: oci-archive }
+      - shell: bash
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - shell: bash
+        run: |
+          set -euo pipefail
+          skopeo copy oci-archive:oci.tar oci-archive:oci-amd64.tar --override-arch amd64
+          skopeo copy oci-archive:oci.tar oci-archive:oci-arm64.tar --override-arch arm64
+          amd_dig=$(tar xOf oci-arm64.tar index.json | jq -r '.manifests[].digest')
+          syft scan oci-archive:oci-amd64.tar > "${d#sha256:}".spdx.json
+          d=$(tar xOf oci-arm64.tar index.json | jq -r '.manifests[].digest')
+          syft sbom oci-archive:oci.tar --output spdx-json --platform $platform > "${d#sha256:}".spdx.json
+      - run: skopeo login ghcr.io --username ${{ github.repository_owner }} --password "${{ secrets.GITHUB_TOKEN }}"
+      - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
 
   package:
     needs: [meta, build]
@@ -141,23 +169,6 @@ jobs:
           name: ${{ needs.meta.outputs.version }}
           files: hokay-*
           generate_release_notes: true
-
-  container-registry:
-    needs: [meta, build]
-    # if: needs.meta.outputs.mode == 'release'
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: oci-archive }
-      - run: skopeo login ghcr.io --username ${{ github.repository_owner }} --password "${{ secrets.GITHUB_TOKEN }}"
-      - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
-      - uses: sigstore/cosign-installer@v3
-      - run: cosign sign --yes ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
 
   crate:
     # Only publish the crate after the rest of the release succeeds.
