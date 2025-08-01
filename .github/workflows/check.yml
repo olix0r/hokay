@@ -1,11 +1,6 @@
 name: Check
 
-on:
-  pull_request:
-    paths:
-      - .github/workflows/check.yml
-      - Cargo.*
-      - "**/*.rs"
+on: pull_request
 
 env:
   CARGO_INCREMENTAL: 0
@@ -19,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: docker://ghcr.io/linkerd/dev:v47-rust
     steps:
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@v4
       - run: just-cargo fmt -- --check
       - run: just-cargo clippy --all-targets --all-features
       - run: cargo deny --all-features check bans licenses sources
