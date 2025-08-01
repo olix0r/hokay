@@ -113,6 +113,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - uses: actions/download-artifact@v4
+        with: { name: oci-archive }
       - name: Run syft scan
         shell: bash
         run: |
