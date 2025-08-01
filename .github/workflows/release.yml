@@ -91,7 +91,7 @@ jobs:
             d=$(echo "$manifest" | jq -r ".manifests[] | select(.platform.os == \"linux\") | select(.platform.architecture == \"$arch\") | .digest")
             echo "$arch=${d#sha256:}" >> "$GITHUB_OUTPUT"
           done
-          index=$(echo "$manifest" | shasum -a 256)
+          index=$(echo "$manifest" | shasum -a 256 | cut -d' ' -f1)
           echo index="$index" >> "$GITHUB_OUTPUT"
       - name: Output digests
         run: |
@@ -140,19 +140,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: skopeo copy oci-archive:oci.tar docker://"${IMAGE_NAME}"
       - uses: sigstore/cosign-installer@v3
-      - name: Run cosign sign and attest
-        shell: bash
-        run: |
-          set -euo pipefail
-          cosign sign --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }}
-          cosign sign --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }}
-          cosign sign --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.index }}
-
-          cosign attest --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} \
-            --predicate sbom/amd64.json --type spdxjson
-          cosign attest --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} \
-            --predicate sbom/arm64.json --type spdxjson
-          # TODO attest the index sbom as well.
+      - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --yes
+      - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --yes
+      - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.index }} --yes
+      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.json --type spdxjson --yes
+      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.json --type spdxjson --yes
+      # TODO attest the index sbom as well.
 
   # Publish a GitHub release with platform-specific static binaries.
   release:
