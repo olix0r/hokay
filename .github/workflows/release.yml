@@ -89,8 +89,9 @@ jobs:
             d=$(echo "$manifest" | jq -r ".manifests[] | select(.platform.os == \"linux\") | select(.platform.architecture == \"$arch\") | .digest")
             echo "$arch=${d#sha256:}" >> "$GITHUB_OUTPUT"
           done
-          echo index=$(echo "$manifest" | shasum -a 256) >> "$GITHUB_OUTPUT"
-      - run: Output digests
+          index=$(echo "$manifest" | shasum -a 256)
+          echo index="$index" >> "$GITHUB_OUTPUT"
+      - name: Output digests
         run: |
           jq . <<EOF
           ${{ toJson(steps.digest.outputs) }}
@@ -149,68 +150,23 @@ jobs:
             --predicate sbom/arm64.json --type spdxjson
           # TODO attest the index sbom as well.
 
-  package:
-    needs: [meta, build]
-    timeout-minutes: 10
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: oci-archive }
-      - name: Extract per-arch binaries
-        run: |
-          set -euo pipefail
-          mkdir pkg
-          for arch in amd64 arm64 ; do
-            skopeo copy \
-              --override-os linux \
-              --override-arch $arch \
-              oci-archive:oci.tar \
-              docker-archive:img-$arch.tar
-            # Extract the binary
-            LAYER=$(tar -xOf img-$arch.tar manifest.json | jq -r '.[].Layers[]' | head -n1)
-            tar -xOf img-$arch.tar $LAYER \
-              | tar -xO usr/local/bin/hokay \
-              > pkg/hokay-linux-$arch
-            shasum -a 256 pkg/hokay-linux-$arch \
-              > pkg/hokay-linux-$arch.sha256
-          done
-      - run: ls -Rlh pkg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: package
-          path: pkg
-
-  # If the release was skipped, list the built binaries.
-  list:
-    needs: [meta, package]
-    if: needs.meta.outputs.mode == 'test'
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: package }
-      - run: ls -Rlh .
-
   # Publish a GitHub release with platform-specific static binaries.
   release:
-    needs: [meta, build]
+    needs: [meta, container-registry]
     if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: write
     timeout-minutes: 5
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: package }
       - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         with:
           name: ${{ needs.meta.outputs.version }}
-          files: hokay-*
           generate_release_notes: true
 
   crate:
     # Only publish the crate after the rest of the release succeeds.
-    needs: release
+    needs: [meta, release]
     timeout-minutes: 10
     runs-on: ubuntu-24.04
     container:
