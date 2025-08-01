@@ -78,27 +78,27 @@ jobs:
             --output type=oci,dest=oci.tar \
             --cache-from type=gha \
             --cache-to type=gha,mode=max
-      - uses: actions/upload-artifact@v4
-        with:
-          name: oci-archive
-          path: oci.tar
-
-      - name: Digests
+      - name: Compute digests
         id: digest
         shell: bash
         run: |
           set -euo pipefail
-
-          d=$(tar xOf target/image.tar index.json | jq -r '.manifests[].digest')
-          manifest=$(tar xOf target/image.tar blobs/sha256/"${d#sha256:}")
-
+          d=$(tar xOf oci.tar index.json | jq -r '.manifests[].digest')
+          manifest=$(tar xOf oci.tar blobs/sha256/"${d#sha256:}")
           for arch in amd64 arm64 ; do
             d=$(echo "$manifest" | jq -r ".manifests[] | select(.platform.os == \"linux\") | select(.platform.architecture == \"$arch\") | .digest")
             echo "$arch=${d#sha256:}" >> "$GITHUB_OUTPUT"
           done
-
           echo index=$(echo "$manifest" | shasum -a 256) >> "$GITHUB_OUTPUT"
-
+      - run: Output digests
+        run: |
+          jq . <<EOF
+          ${{ toJson(steps.digest.outputs) }}
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oci-archive
+          path: oci.tar
     outputs:
       amd64: ${{ steps.digest.outputs.amd64 }}
       arm64: ${{ steps.digest.outputs.arm64 }}
