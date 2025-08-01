@@ -72,7 +72,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Run docker buildx build .
         run: |
-          docker buildx build . \~
+          docker buildx build . \
             --tag ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }} \
             --platform linux/amd64,linux/arm64 \
             --output type=oci,dest=oci.tar \
@@ -82,6 +82,27 @@ jobs:
         with:
           name: oci-archive
           path: oci.tar
+
+      - name: Digests
+        id: digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          d=$(tar xOf target/image.tar index.json | jq -r '.manifests[].digest')
+          manifest=$(tar xOf target/image.tar blobs/sha256/"${d#sha256:}")
+
+          for arch in amd64 arm64 ; do
+            d=$(echo "$manifest" | jq -r ".manifests[] | select(.platform.os == \"linux\") | select(.platform.architecture == \"$arch\") | .digest")
+            echo "$arch=${d#sha256:}" >> "$GITHUB_OUTPUT"
+          done
+
+          echo index=$(echo "$manifest" | shasum -a 256) >> "$GITHUB_OUTPUT"
+
+    outputs:
+      amd64: ${{ steps.digest.outputs.amd64 }}
+      arm64: ${{ steps.digest.outputs.arm64 }}
+      index: ${{ steps.digest.outputs.index }}
 
   container-registry:
     needs: [meta, build]
@@ -97,19 +118,36 @@ jobs:
         with: { name: oci-archive }
       - shell: bash
         run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-      - shell: bash
+      - name: Run syft scan
+        shell: bash
         run: |
           set -euo pipefail
-          skopeo copy oci-archive:oci.tar oci-archive:oci-amd64.tar --override-arch amd64
-          skopeo copy oci-archive:oci.tar oci-archive:oci-arm64.tar --override-arch arm64
-          amd_dig=$(tar xOf oci-arm64.tar index.json | jq -r '.manifests[].digest')
-          syft scan oci-archive:oci-amd64.tar > "${d#sha256:}".spdx.json
-          d=$(tar xOf oci-arm64.tar index.json | jq -r '.manifests[].digest')
-          syft sbom oci-archive:oci.tar --output spdx-json --platform $platform > "${d#sha256:}".spdx.json
-      - run: skopeo login ghcr.io --username ${{ github.repository_owner }} --password "${{ secrets.GITHUB_TOKEN }}"
+          mkdir -p spdx
+          # TODO generate and attest the index sbom as well.
+          for arch in amd64 arm64 ; do
+            skopeo copy oci-archive:oci.tar oci-archive:oci-$arch.tar --override-arch $arch
+            syft scan oci-archive:oci-$arch.tar -o spdx-json > spdx/"$arch".spdx.json
+          done
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
       - uses: sigstore/cosign-installer@v3
-      - run: cosign sign --yes ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
+      - name: Run cosign sign and attest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.amd64 }}
+          cosign sign --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.arm64 }}
+          cosign sign --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.index }}
+
+          cosign attest --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.amd64 }} \
+            --predicate sbom/amd64.json --type spdxjson
+          cosign attest --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.arm64 }} \
+            --predicate sbom/arm64.json --type spdxjson
+          # TODO attest the index sbom as well.
 
   package:
     needs: [meta, build]
