@@ -107,8 +107,29 @@ jobs:
       arm64: ${{ steps.digest.outputs.arm64 }}
       index: ${{ steps.digest.outputs.index }}
 
+  sbom:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - name: Run syft scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sbom
+          for arch in amd64 arm64 ; do
+            skopeo copy oci-archive:oci.tar oci-archive:oci-$arch.tar --override-arch $arch
+            syft scan oci-archive:oci-$arch.tar -o spdx-json > sbom/"$arch".spdx.json
+          done
+      # TODO generate and attest the index sbom as well.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom
+
   container-registry:
-    needs: [meta, build]
+    needs: [meta, build, sbom]
     # if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: read
@@ -119,30 +140,23 @@ jobs:
     env:
       IMAGE_NAME: ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: oci-archive }
-      - shell: bash
-        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-      - name: Run syft scan
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p spdx
-          # TODO generate and attest the index sbom as well.
-          for arch in amd64 arm64 ; do
-            skopeo copy oci-archive:oci.tar oci-archive:oci-$arch.tar --override-arch $arch
-            syft scan oci-archive:oci-$arch.tar -o spdx-json > spdx/"$arch".spdx.json
-          done
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - run: skopeo copy oci-archive:oci.tar docker://"${IMAGE_NAME}"
       - uses: sigstore/cosign-installer@v3
+
+      - uses: actions/download-artifact@v4
+        with: { name: oci-archive }
+      - run: skopeo copy oci-archive:oci.tar docker://"${IMAGE_NAME}"
+
       - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --yes
       - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --yes
       - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.index }} --yes
+
+      - uses: actions/download-artifact@v4
+        with: { name: sbom }
       - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.json --type spdxjson --yes
       - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.json --type spdxjson --yes
       # TODO attest the index sbom as well.
