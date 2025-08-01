@@ -62,12 +62,11 @@ jobs:
       repo: ghcr.io/${{ github.repository_owner }}/hokay
       mode: ${{ steps.git.outputs.mode }}
       version: ${{ steps.git.outputs.version }}
+      image: ghcr.io/${{ github.repository_owner }}/hokay:${{ steps.git.outputs.version }}
 
   build:
     needs: meta
     runs-on: ubuntu-24.04
-    env:
-      IMAGE_NAME: ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -75,7 +74,7 @@ jobs:
       - name: Run docker buildx build .
         run: |
           docker buildx build . \
-            --tag "$IMAGE_NAME" \
+            --tag ${{ needs.meta.outputs.image }} \
             --platform linux/amd64,linux/arm64 \
             --output type=oci,dest=oci.tar \
             --cache-from type=gha \
@@ -133,8 +132,6 @@ jobs:
       id-token: write
     timeout-minutes: 5
     runs-on: ubuntu-24.04
-    env:
-      IMAGE_NAME: ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
     steps:
       - uses: docker/login-action@v3
         with:
@@ -145,17 +142,17 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with: { name: oci-archive }
-      - run: skopeo copy oci-archive:oci.tar docker://"${IMAGE_NAME}"
+      - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.image }}}
 
-      - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --yes
-      - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --yes
-      - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.index }} --yes
+      - run: cosign sign ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.amd64 }} --yes
+      - run: cosign sign ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.arm64 }} --yes
+      - run: cosign sign ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.index }} --yes
 
       - uses: actions/download-artifact@v4
         with: { name: sbom, path: sbom }
       - run: find . -ls
-      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.spdx.json --type spdxjson --yes
-      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.spdx.json --type spdxjson --yes
+      - run: cosign attest ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.spdx.json --type spdxjson --yes
+      - run: cosign attest ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.spdx.json --type spdxjson --yes
       # TODO attest the index sbom as well.
 
   # Publish a GitHub release with platform-specific static binaries.
