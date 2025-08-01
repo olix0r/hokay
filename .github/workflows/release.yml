@@ -122,9 +122,7 @@ jobs:
       - run: syft scan oci-archive:oci-arm64.tar -o spdx-json > sbom/arm64.spdx.json
       # TODO generate and attest the index sbom as well.
       - uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom
+        with: { name: sbom, path: sbom }
 
   container-registry:
     needs: [meta, build, sbom]
@@ -154,9 +152,10 @@ jobs:
       - run: cosign sign "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.index }} --yes
 
       - uses: actions/download-artifact@v4
-        with: { name: sbom }
-      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate amd64.json --type spdxjson --yes
-      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate arm64.json --type spdxjson --yes
+        with: { name: sbom, path: sbom }
+      - run: find . -ls
+      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.json --type spdxjson --yes
+      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.json --type spdxjson --yes
       # TODO attest the index sbom as well.
 
   # Publish a GitHub release with platform-specific static binaries.
