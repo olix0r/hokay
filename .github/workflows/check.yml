@@ -22,6 +22,6 @@ jobs:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - run: just-cargo fmt -- --check
       - run: just-cargo clippy --all-targets --all-features
-      - run: cargo deny check --all-features bans licenses sources
-      - run: cargo deny check --all-features advisories
+      - run: cargo deny --all-features check bans licenses sources
+      - run: cargo deny --all-features check advisories
         continue-on-error: true
