@@ -116,6 +116,8 @@ jobs:
         with: { name: oci-archive }
       - run: skopeo copy oci-archive:oci.tar oci-archive:oci-amd64.tar --override-arch amd64
       - run: skopeo copy oci-archive:oci.tar oci-archive:oci-arm64.tar --override-arch arm64
+      - run: syft scan oci-archive:oci-amd64.tar
+      - run: syft scan oci-archive:oci-arm64.tar
       - run: mkdir -p sbom
       - run: syft scan oci-archive:oci-amd64.tar -o spdx-json > sbom/amd64.spdx.json
       - run: syft scan oci-archive:oci-arm64.tar -o spdx-json > sbom/arm64.spdx.json
@@ -125,7 +127,7 @@ jobs:
 
   oci-push:
     needs: [meta, build, sbom]
-    # if: needs.meta.outputs.mode == 'release'
+    if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: read
       packages: write
