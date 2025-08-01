@@ -22,10 +22,6 @@ jobs:
       - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
       - run: just-cargo fmt -- --check
       - run: just-cargo clippy --all-targets --all-features
-      - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
-        with:
-          command: check bans licenses sources
-      - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
+      - run: cargo deny check --all-features bans licenses sources
+      - run: cargo deny check --all-features advisories
         continue-on-error: true
-        with:
-          command: advisories
