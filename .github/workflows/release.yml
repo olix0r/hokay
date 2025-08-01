@@ -115,15 +115,11 @@ jobs:
       - run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
       - uses: actions/download-artifact@v4
         with: { name: oci-archive }
-      - name: Run syft scan
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p sbom
-          for arch in amd64 arm64 ; do
-            skopeo copy oci-archive:oci.tar oci-archive:oci-$arch.tar --override-arch $arch
-            syft scan oci-archive:oci-$arch.tar -o spdx-json > sbom/"$arch".spdx.json
-          done
+      - run: skopeo copy oci-archive:oci.tar oci-archive:oci-amd64.tar --override-arch amd64
+      - run: skopeo copy oci-archive:oci.tar oci-archive:oci-arm64.tar --override-arch arm64
+      - run: mkdir -p sbom
+      - run: syft scan oci-archive:oci-amd64.tar -o spdx-json > sbom/amd64.spdx.json
+      - run: syft scan oci-archive:oci-arm64.tar -o spdx-json > sbom/arm64.spdx.json
       # TODO generate and attest the index sbom as well.
       - uses: actions/upload-artifact@v4
         with:
