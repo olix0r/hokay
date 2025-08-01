@@ -65,7 +65,9 @@ jobs:
 
   build:
     needs: meta
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE_NAME: ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -73,7 +75,7 @@ jobs:
       - name: Run docker buildx build .
         run: |
           docker buildx build . \
-            --tag ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }} \
+            --tag "$IMAGE_NAME" \
             --platform linux/amd64,linux/arm64 \
             --output type=oci,dest=oci.tar \
             --cache-from type=gha \
@@ -114,6 +116,8 @@ jobs:
       id-token: write
     timeout-minutes: 5
     runs-on: ubuntu-24.04
+    env:
+      IMAGE_NAME: ${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/download-artifact@v4
         with: { name: oci-archive }
@@ -134,19 +138,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}
+      - run: skopeo copy oci-archive:oci.tar docker://"${IMAGE_NAME}"
       - uses: sigstore/cosign-installer@v3
       - name: Run cosign sign and attest
         shell: bash
         run: |
           set -euo pipefail
-          cosign sign --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.amd64 }}
-          cosign sign --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.arm64 }}
-          cosign sign --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.index }}
+          cosign sign --yes "${IMAGE_NAME}"@${{ needs.build.outputs.amd64 }}
+          cosign sign --yes "${IMAGE_NAME}"@${{ needs.build.outputs.arm64 }}
+          cosign sign --yes "${IMAGE_NAME}"@${{ needs.build.outputs.index }}
 
-          cosign attest --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.amd64 }} \
+          cosign attest --yes "${IMAGE_NAME}"@${{ needs.build.outputs.amd64 }} \
             --predicate sbom/amd64.json --type spdxjson
-          cosign attest --yes "${{ needs.meta.outputs.repo }}"@${{ needs.build.outputs.arm64 }} \
+          cosign attest --yes "${IMAGE_NAME}"@${{ needs.build.outputs.arm64 }} \
             --predicate sbom/arm64.json --type spdxjson
           # TODO attest the index sbom as well.
 
