@@ -42,15 +42,19 @@ jobs:
         shell: bash
         run: |
           ref="${{ github.ref }}"
+          img='ghcr.io/${{ github.repository_owner }}/hokay'
           if [[ "$ref" == refs/tags/release/* ]]; then
-            echo version="${ref##refs/tags/release/}" >> "$GITHUB_OUTPUT"
+            ver="${ref#refs/tags/release/}"
+            echo version="$ver" >> "$GITHUB_OUTPUT"
+            echo tags="${img}:${ver},${img}:latest" >> "$GITHUB_OUTPUT"
             echo mode=release >> "$GITHUB_OUTPUT"
           else
             sha="${{ github.sha }}"
-            echo version="v${{ steps.cargo.outputs.crate-version }}-git${sha:0:7}" >> "$GITHUB_OUTPUT"
+            ver=v${{ steps.cargo.outputs.crate-version }}-git"${sha:0:7}"
+            echo version="$ver" >> "$GITHUB_OUTPUT"
+            echo tags="${img}:${ver}" >> "$GITHUB_OUTPUT"
             echo mode=test >> "$GITHUB_OUTPUT"
           fi
-
       - if: steps.git.outputs.mode == 'release'
         shell: bash
         run: |
@@ -62,124 +66,40 @@ jobs:
       repo: ghcr.io/${{ github.repository_owner }}/hokay
       mode: ${{ steps.git.outputs.mode }}
       version: ${{ steps.git.outputs.version }}
+      tags: ${{ steps.git.outputs.tags }}
       image: ghcr.io/${{ github.repository_owner }}/hokay:${{ steps.git.outputs.version }}
 
   build:
     needs: meta
     runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - name: Run docker buildx build .
-        run: |
-          docker buildx build . \
-            --tag ${{ needs.meta.outputs.image }} \
-            --platform linux/amd64,linux/arm64 \
-            --output type=oci,dest=oci.tar \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max
-      - name: Compute digests
-        id: digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          d=$(tar xOf oci.tar index.json | jq -r '.manifests[].digest')
-          manifest=$(tar xOf oci.tar blobs/sha256/"${d#sha256:}")
-          for arch in amd64 arm64 ; do
-            d=$(echo "$manifest" | jq -r ".manifests[] | select(.platform.os == \"linux\") | select(.platform.architecture == \"$arch\") | .digest")
-            echo "$arch=${d#sha256:}" >> "$GITHUB_OUTPUT"
-          done
-          index=$(echo "$manifest" | shasum -a 256 | cut -d' ' -f1)
-          echo index="$index" >> "$GITHUB_OUTPUT"
-      - name: Output digests
-        run: |
-          jq . <<EOF
-          ${{ toJson(steps.digest.outputs) }}
-          EOF
-      - uses: actions/upload-artifact@v4
-        with:
-          name: oci-archive
-          path: oci.tar
-    outputs:
-      amd64: ${{ steps.digest.outputs.amd64 }}
-      arm64: ${{ steps.digest.outputs.arm64 }}
-      index: ${{ steps.digest.outputs.index }}
-
-  sbom:
-    needs: build
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-      - uses: actions/download-artifact@v4
-        with: { name: oci-archive }
-      - run: skopeo copy oci-archive:oci.tar oci-archive:oci-amd64.tar --override-arch amd64
-      - run: skopeo copy oci-archive:oci.tar oci-archive:oci-arm64.tar --override-arch arm64
-      - run: syft scan oci-archive:oci-amd64.tar
-      - run: syft scan oci-archive:oci-arm64.tar
-      - run: mkdir -p sbom
-      - run: syft scan oci-archive:oci-amd64.tar -o spdx-json > sbom/amd64.spdx.json
-      - run: syft scan oci-archive:oci-arm64.tar -o spdx-json > sbom/arm64.spdx.json
-      # TODO generate and attest the index sbom as well.
-      - uses: actions/upload-artifact@v4
-        with: { name: sbom, path: sbom }
-
-  oci-push:
-    needs: [meta, build, sbom]
-    # if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: read
       packages: write
       id-token: write
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
+    env:
+      COSIGN_YES: 'true'
     steps:
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        id: build
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: sigstore/cosign-installer@v3
-
-      - uses: actions/download-artifact@v4
-        with: { name: oci-archive }
-      - run: skopeo copy oci-archive:oci.tar docker://${{ needs.meta.outputs.image }}
-
-      - run: cosign sign ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.amd64 }} --yes
-      - run: cosign sign ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.arm64 }} --yes
-      - run: cosign sign ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.index }} --yes
-
-      - uses: actions/download-artifact@v4
-        with: { name: sbom, path: sbom }
-      - run: find . -ls
-      - run: cosign attest ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.spdx.json --type spdxjson --yes
-      - run: cosign attest ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.spdx.json --type spdxjson --yes
-      # TODO attest the index sbom as well.
+          cache-from: type=gha,scope=${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
+          platforms: linux/amd64,linux/arm64
+          provenance: true
+          push: true
+          sbom: true
+          tags: ${{ needs.meta.outputs.tags }}
+      - run: echo '${{ needs.meta.outputs.tags }}' | xargs -d, -I{} cosign sign --recursive '{}@sha256:${{ steps.build.outputs.digest }}'
     outputs:
-      image: ${{ needs.meta.outputs.image }}@sha256:${{ needs.build.outputs.index }}
-
-  oci-tag-latest:
-    needs: [meta, oci-push]
-    permissions:
-      contents: read
-      packages: write
-    timeout-minutes: 5
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - run: docker pull '${{ needs.oci-push.outputs.image }}'
-      - run: docker tag '${{ needs.oci-push.outputs.image }}' '${{ needs.meta.outputs.repo }}:latest'
-      - run: docker push '${{ needs.meta.outputs.repo }}:latest'
-        if: needs.meta.outputs.mode == 'release'
+      image: ${{ needs.meta.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
 
   # Publish a GitHub release with platform-specific static binaries.
   release:
-    needs: [meta, oci-push]
+    needs: [meta, build]
     if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: write
