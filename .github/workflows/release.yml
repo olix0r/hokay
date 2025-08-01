@@ -144,13 +144,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cosign sign --yes "${IMAGE_NAME}"@${{ needs.build.outputs.amd64 }}
-          cosign sign --yes "${IMAGE_NAME}"@${{ needs.build.outputs.arm64 }}
-          cosign sign --yes "${IMAGE_NAME}"@${{ needs.build.outputs.index }}
+          cosign sign --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }}
+          cosign sign --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }}
+          cosign sign --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.index }}
 
-          cosign attest --yes "${IMAGE_NAME}"@${{ needs.build.outputs.amd64 }} \
+          cosign attest --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} \
             --predicate sbom/amd64.json --type spdxjson
-          cosign attest --yes "${IMAGE_NAME}"@${{ needs.build.outputs.arm64 }} \
+          cosign attest --yes "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} \
             --predicate sbom/arm64.json --type spdxjson
           # TODO attest the index sbom as well.
 
