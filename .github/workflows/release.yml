@@ -154,8 +154,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: sbom, path: sbom }
       - run: find . -ls
-      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.json --type spdxjson --yes
-      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.json --type spdxjson --yes
+      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.amd64 }} --predicate sbom/amd64.spdx.json --type spdxjson --yes
+      - run: cosign attest "${IMAGE_NAME}"@sha256:${{ needs.build.outputs.arm64 }} --predicate sbom/arm64.spdx.json --type spdxjson --yes
       # TODO attest the index sbom as well.
 
   # Publish a GitHub release with platform-specific static binaries.
