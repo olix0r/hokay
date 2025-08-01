@@ -1,11 +1,6 @@
 name: Check
 
-on:
-  pull_request:
-    paths:
-      - .github/workflows/check.yml
-      - Cargo.*
-      - "**/*.rs"
+on: pull_request
 
 env:
   CARGO_INCREMENTAL: 0
@@ -14,39 +9,14 @@ env:
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  clippy:
+  rust:
     timeout-minutes: 5
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62-bullseye
+    runs-on: ubuntu-24.04
+    container: docker://ghcr.io/linkerd/dev:v47-rust
     steps:
-      - run: rustup component add clippy
-      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - run: cargo clippy --all-targets --all-features --message-format=json | cargo-action-fmt
-
-  fmt:
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62-bullseye
-    steps:
-      - run: rustup component add rustfmt
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - run: cargo fmt -- --check
-
-  deny:
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        checks:
-          - advisories
-          - bans licenses sources
-    # Prevent sudden announcement of a new advisory from failing Ci.
-    continue-on-error: ${{ matrix.checks == 'advisories' }}
-    steps:
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - uses: EmbarkStudios/cargo-deny-action@ccfac4e084d1dedad50125be4550f87a21ba181e
-        with:
-          command: check ${{ matrix.checks }}
+      - uses: actions/checkout@v4
+      - run: just-cargo fmt -- --check
+      - run: just-cargo clippy --all-targets --all-features
+      - run: cargo deny --all-features check bans licenses sources
+      - run: cargo deny --all-features check advisories
+        continue-on-error: true

@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/release.yml
+  pull_request: {}
   push:
     tags:
       - 'release/*'
@@ -20,174 +18,114 @@ permissions:
 jobs:
   meta:
     timeout-minutes: 5
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62-bullseye
+    runs-on: ubuntu-24.04
+    container: docker://ghcr.io/linkerd/dev:v47-rust
     steps:
-      - id: meta
+      - uses: actions/checkout@v4
+      - run: cargo fetch
+      - name: Run cargo metadata
+        id: cargo
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "hokay") | .version')
+          echo "crate-version=$v" >> "$GITHUB_OUTPUT"
+      - name: "Crate version ${{ steps.cargo.outputs.crate-version }}"
+        run: |
+          if [[ -z "${{ steps.cargo.outputs.crate-version }}" ]]; then
+            echo "Crate version not found" >&2
+            exit 1
+          fi
+
+      - name: Run git metadata
+        id: git
         shell: bash
         run: |
           ref="${{ github.ref }}"
+          img='ghcr.io/${{ github.repository_owner }}/hokay'
           if [[ "$ref" == refs/tags/release/* ]]; then
-            echo ::set-output name=version::"${ref##refs/tags/release/}"
-            echo ::set-output name=mode::release
+            ver="${ref#refs/tags/release/}"
+            echo version="$ver" >> "$GITHUB_OUTPUT"
+            echo tags="${img}:${ver},${img}:latest" >> "$GITHUB_OUTPUT"
+            echo mode=release >> "$GITHUB_OUTPUT"
           else
             sha="${{ github.sha }}"
-            echo ::set-output name=version::"test-${sha:0:7}"
-            echo ::set-output name=mode::test
+            ver=v${{ steps.cargo.outputs.crate-version }}-git"${sha:0:7}"
+            echo version="$ver" >> "$GITHUB_OUTPUT"
+            echo tags="${img}:${ver}" >> "$GITHUB_OUTPUT"
+            echo mode=test >> "$GITHUB_OUTPUT"
           fi
-      - if: steps.meta.outputs.mode == 'release'
-        uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - if: steps.meta.outputs.mode == 'release'
+      - if: steps.git.outputs.mode == 'release'
         shell: bash
         run: |
-          curl --proto '=https' --tlsv1.3 -fsSL https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 -o $HOME/jq
-          chmod 755 $HOME/jq
-          version=$(cargo metadata --format-version=1 | $HOME/jq -r '.packages[] | select(.name == "hokay") | .version')
-          if [[ "v${version}" != "${{ steps.meta.outputs.version }}" ]]; then
-            echo "::error ::Crate version v${version} does not match tag ${{ steps.meta.outputs.version }}"
+          if [[ "v${{ steps.cargo.outputs.crate-version }}" != "${{ steps.git.outputs.version }}" ]]; then
+            echo "::error ::Crate version v${{ steps.cargo.outputs.version }} does not match tag ${{ steps.git.outputs.version }}"
             exit 1
           fi
     outputs:
       repo: ghcr.io/${{ github.repository_owner }}/hokay
-      mode: ${{ steps.meta.outputs.mode }}
-      version: ${{ steps.meta.outputs.version }}
+      mode: ${{ steps.git.outputs.mode }}
+      version: ${{ steps.git.outputs.version }}
+      tags: ${{ steps.git.outputs.tags }}
+      image: ghcr.io/${{ github.repository_owner }}/hokay:${{ steps.git.outputs.version }}
 
-  package:
-    needs: [meta]
-    strategy:
-      matrix:
-        architecture: [amd64, arm64, arm]
-        include:
-          - architecture: amd64
-            target: x86_64-unknown-linux-musl
-            binutils: binutils-x86-64-linux-gnu
-            strip: strip
-          - architecture: arm64
-            target: aarch64-unknown-linux-musl
-            binutils: binutils-aarch64-linux-gnu
-            strip: aarch64-linux-gnu-strip
-          - architecture: arm
-            target: armv7-unknown-linux-musleabihf
-            binutils: binutils-arm-linux-gnueabihf
-            strip: arm-linux-gnueabihf-strip
-    name: package (${{ matrix.architecture }})
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.62-bullseye
-    env:
-      CARGO: cargo
-    steps:
-      - run: rustup target add "${{ matrix.target }}"
-      - run: apt-get update
-      - run: apt-get -y install musl-tools "${{ matrix.binutils }}"
-      - if:  matrix.architecture != 'amd64'
-        name: Install cross
-        run: |
-          cargo install cross
-          apt-get -y install docker.io
-          echo CARGO=cross >> $GITHUB_ENV
-          echo CROSS_DOCKER_IN_DOCKER=true >> $GITHUB_ENV
-      - uses: olix0r/cargo-action-fmt@ee1ef42932e44794821dab57ef1bf7a73df8b21f
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
-      - name: Build
-        run: |
-          ${CARGO} build --release --target "${{ matrix.target }}" --message-format=json | cargo-action-fmt
-          cd target/"${{ matrix.target }}"/release
-          "${{ matrix.strip }}" hokay
-          mv hokay hokay-${{ matrix.architecture }}
-          shasum -a 256 hokay-${{ matrix.architecture }} > hokay-${{ matrix.architecture }}.sha256
-      - uses: actions/upload-artifact@6673cd052c4cd6fcf4b4e6e60ea986c889389535
-        with:
-          name: ${{ matrix.architecture }}-artifacts
-          path: target/${{ matrix.target }}/release/hokay-${{ matrix.architecture }}*
-
-  # Publish a multi-arch docker image using the already-built binaries..
-  docker:
-    needs: [meta, package]
+  build:
+    needs: meta
+    runs-on: ubuntu-24.04
     permissions:
+      contents: read
       packages: write
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
+      id-token: write
+    env:
+      COSIGN_YES: 'true'
     steps:
-      - name: Run mktemp
-        id: mktemp
-        run: echo ::set-output name=dir::"$(mktemp -d -t hokay-XXXXXX)"
-      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
-        with:
-          path: ${{ steps.mktemp.outputs.dir }}/artifacts
-      - uses: docker/setup-buildx-action@94ab11c41e45d028884a99163086648e898eed25
-      - uses: docker/login-action@dd4fa0671be5250ee6f50aedf4cb05514abda2c7
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build multi-arch docker images
-        working-directory: ${{ steps.mktemp.outputs.dir }}
-        run: |
-          ( echo 'FROM scratch'
-            echo 'ARG BIN'
-            echo 'COPY --chmod=555 $BIN /hokay'
-            echo 'ENTRYPOINT ["/hokay"]'
-          ) >Dockerfile
-          repo="${{ needs.meta.outputs.repo }}"
-          version="${{ needs.meta.outputs.version }}"
-          for arch in amd64 arm64 arm; do
-            docker buildx build . --push --tag "$repo:$version-$arch" --build-arg "BIN=artifacts/$arch-artifacts/hokay-$arch"
-          done
-          docker manifest create "$repo:$version" "$repo:$version-amd64" "$repo:$version-arm64" "$repo:$version-arm"
-          for arch in amd64 arm64 arm ; do
-            docker manifest annotate "$repo:$version" "$repo:$version-$arch" --os=linux --arch=$arch
-          done
-      - run: docker manifest push "${{ needs.meta.outputs.repo }}:${{ needs.meta.outputs.version }}"
-      - if: needs.meta.outputs.mode == 'release'
-        run: |
-          repo="${{ needs.meta.outputs.repo }}"
-          version="${{ needs.meta.outputs.version }}"
-          docker pull "$repo:$version"
-          docker tag "$repo:$version" "$repo:latest"
-          docker push "$repo:latest"
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          cache-from: type=gha,scope=${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
+          platforms: linux/amd64,linux/arm64
+          provenance: true
+          push: true
+          sbom: true
+          tags: ${{ needs.meta.outputs.tags }}
+      - run: echo -n '${{ needs.meta.outputs.tags }}' | xargs -d, -I{} cosign sign --recursive {}@${{ steps.build.outputs.digest }}
+    outputs:
+      image: ${{ needs.meta.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
 
   # Publish a GitHub release with platform-specific static binaries.
   release:
-    needs: [meta, package, docker]
+    needs: [meta, build]
     if: needs.meta.outputs.mode == 'release'
     permissions:
       contents: write
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
-        with:
-          path: artifacts
       - uses: softprops/action-gh-release@1e07f4398721186383de40550babbdf2b84acfc5
         with:
           name: ${{ needs.meta.outputs.version }}
-          files: artifacts/**/hokay-*
           generate_release_notes: true
-
-  # If the release was skipped, list the built binaries.
-  list:
-    needs: [meta, package]
-    if: needs.meta.outputs.mode == 'test'
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
-        with:
-          path: artifacts
-      - run: ls -lh artifacts/**/hokay-*
 
   crate:
     # Only publish the crate after the rest of the release succeeds.
-    needs: [release, docker]
+    needs: [meta, release]
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
-      image: docker://rust:1.62-bullseye
+      image: docker://rust:1.88-bullseye
     steps:
-      - uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
+      - uses: actions/checkout@v4
       - run: cargo publish --dry-run
-      - if: startsWith(github.ref, 'refs/tags/release/')
+      - if: needs.meta.outputs.mode == 'release'
         run: cargo publish --token=${{ secrets.CRATESIO_TOKEN }}

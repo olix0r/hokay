@@ -1,15 +1,19 @@
 {
 	"name": "hokay",
-	"image": "ghcr.io/linkerd/dev:v19",
-	"extensions": [
-		"DavidAnson.vscode-markdownlint",
-		"NathanRidley.autotrim",
-		"rust-lang.rust-analyzer",
-		"samverschueren.final-newline",
-		//"skellock.just",
-		"tamasfe.even-better-toml",
-	],
-	"settings": {},
+	"image": "ghcr.io/linkerd/dev:v47",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"DavidAnson.vscode-markdownlint",
+				"NathanRidley.autotrim",
+				"rust-lang.rust-analyzer",
+				"samverschueren.final-newline",
+				//"skellock.just",
+				"tamasfe.even-better-toml"
+			],
+			"settings": {}
+		}
+	},
 	// Support docker + debugger
 	"runArgs": [
 		"--init",
