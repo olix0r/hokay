@@ -98,7 +98,7 @@ jobs:
           push: true
           sbom: true
           tags: ${{ needs.meta.outputs.tags }}
-      - run: echo '${{ needs.meta.outputs.tags }}' | xargs -d, -I{} cosign sign --recursive '{}@${{ steps.build.outputs.digest }}'
+      - run: cosign sign --recursive '${{ steps.build.outputs.digest }}'
     outputs:
       image: ${{ needs.meta.outputs.image }}
       digest: ${{ steps.build.outputs.digest }}
